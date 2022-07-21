@@ -1,0 +1,131 @@
+<html lang="ja">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<link rel="stylesheet" type="text/css" href="style.css">
+<title>Spoken Dialog by Javascript</title>
+</head>
+<body>
+
+<h1 class = "title">ふなっしーと会話しよう！</h1>
+
+<p>
+<button id="startButton" class = "start-button">start</button>
+<button id="stopButton" class = "stop-button">stop</button>
+</p>
+
+<ul class = "example">
+  <li>名前を聞いてね！</li>
+  <li>誰か聞いてみて！</li>
+  <li>年齢を聞いみて！</li>
+  <li>元気か聞いてみて！</li>
+  <li>好きな食べ物を聞いてみて！</li>
+  <li>挨拶をしてみてね！</li>
+  <li>どこに住んでるか聞いてみて！</li>
+  <li>天気を聞いてね！</li>
+  <li>お礼を言ってみて！</li>
+  <li>一緒に遊びに誘って！</li>
+</ul>
+
+<p>
+<div id="resultOutput"></div>
+</p>
+
+<script>
+
+  // 応答の定義（ハッシュ）    
+  var response = {
+      "名前":"ふなっしーなっしー",
+      "誰":"梨の妖精なっしー",
+      "何歳":"年齢はないなっしなー",
+      "元気":"梨汁ぶしゃー",
+      "食べ物":"梨なっし！",
+      "こんにちは":"こんにちはなっしー",
+      "おはよう":"おはようなっしー",
+      "どこ":"千葉県船橋市なっしー",
+      "天気": "今日は快晴なっしー",
+      "ありがとう":"こちらこそなっしー",
+      "一緒":"もちろんなっしー"
+  };
+
+  const startButton = document.querySelector('#startButton'); // 開始ボタン
+  const stopButton = document.querySelector('#stopButton'); // 停止ボタン
+  const resultOutput = document.querySelector('#resultOutput'); // 結果出力エリア
+  
+  if (!'SpeechSynthesisUtterance' in window) {
+      alert("あなたのブラウザはSpeech Synthesis APIに未対応です。");
+  }
+  const tts = new SpeechSynthesisUtterance(); // TTSインスタンスを生成
+  //tts.text = textForm.value; // テキストを設定
+  tts.lang = "ja-JP"; // 言語(日本語)、英語の場合はen-US
+  tts.rate = 1.0; // 速度
+  tts.pitch = 2.0; // 声の高さ
+  tts.volume = 1.0; // 音量
+  
+  SpeechRecognition = webkitSpeechRecognition || SpeechRecognition;
+  if (!'SpeechRecognition' in window) {
+      alert("あなたのブラウザはSpeech Recognition APIに未対応です。");
+  }
+  
+  const asr = new SpeechRecognition(); // ASRインスタンスを生成
+  asr.lang = "ja-JP"; // 言語（日本語）
+  asr.interimResults = true; // 途中結果出力をオン
+  asr.continuous = true; // 継続入力をオン
+  
+  let output = ''; // 出力
+  
+  
+  // 認識結果が出力されたときのイベントハンドラ
+  asr.onresult = function(event){
+      let transcript = event.results[event.resultIndex][0].transcript; // 結果文字列
+  
+      let output_not_final = '';
+      if (event.results[event.resultIndex].isFinal) { // 結果が確定（Final）のとき
+        asr.abort(); // 音声認識を停止
+              
+        let flag = false;
+        for(key in response){ //話しかけた内容が用意してあるキーワードと一致しているか判定する
+          if(transcript.normalize().indexOf(key) > -1){
+            flag = true;
+            tts.text = response[key]; //オウム返ししてくる
+            output = transcript + " => " + response[key] + '<br>' + output;
+          }
+        }
+        if(!flag){ //用意していない質問をしてきたとき
+          tts.text = "よくわからないなっしー"; //オウム返ししてくる
+          output = transcript + " => " + "よくわからないなっしー" + '<br>' + output;
+        }
+        flag = false;
+
+        // 再生が終了（end）ときのイベントハンドラ（終了したときに実行される）
+        tts.onend = function(event){
+            asr.start(); // 音声認識を再開
+        }
+  
+        speechSynthesis.speak(tts); // 再生
+      } else { // 結果がまだ未確定のとき
+          output_not_final = '<span style="color:#696969;">' + transcript + '</span>';
+      }
+      resultOutput.innerHTML = output_not_final +'<br>' + output;
+  }
+
+// 開始ボタンのイベントハンドラ
+startButton.addEventListener('click', function() {
+  asr.start();
+})
+
+// 停止ボタンのイベントハンドラ
+stopButton.addEventListener('click', function() {
+  asr.stop();
+})
+
+/*----------工夫した点----------*/
+//ふなっしーと会話している気になれる対話システム
+//一部のキーワード一致で返答が返ってくるようにした
+//返答が用意されていない場合は返答できない旨を教えてくれるようにした
+
+</script>
+</body>
+</html>
