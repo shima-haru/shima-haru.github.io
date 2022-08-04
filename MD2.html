@@ -1,0 +1,243 @@
+<html lang="ja">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<link rel="stylesheet" type="text/css" href="style.css">
+<title>Spoken Dialog by Javascript</title>
+</head>
+<body>
+
+<h1 class = "title">サイクリング行き先提案システム</h1>
+
+<p>
+<button id="startButton" class = "start-button">start</button>
+<button id="stopButton" class = "stop-button">stop</button>
+</p>
+
+<ul class = "example">
+  <li>まずは何か話しかけてみよう！</li>
+</ul>
+
+<p>
+<div id="resultOutput"></div>
+</p>
+
+<script>
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            function( position ){
+                let coords = position.coords;
+                console.log(coords);
+                //Re(coords);
+                
+                //Reachable(coords);
+            }
+    )}
+
+    let first_flag = true;
+    reSpeak = 0; //同じ質問を返した回数を数える
+
+  // 応答の定義（ハッシュ）    
+  var response = {
+      ".*話して.*":"私はサイクリングの行き先提案システムです。あなたの現在位置から指定した時間のサイクリング先を提案します。これからサイクリングに出かけますか？",
+      "行き,出かけ,お願い,よろしく,はい":"サイクル時間は何分ですか", //180以内
+      "1,2,3,4,5,6,7,8,9,0":"適切な目的地をお探しします",
+      "分,時間":"2時間の場合、120のように分単位で数字だけでもう一度お答えください",
+  };
+
+  const startButton = document.querySelector('#startButton'); // 開始ボタン
+  const stopButton = document.querySelector('#stopButton'); // 停止ボタン
+  const resultOutput = document.querySelector('#resultOutput'); // 結果出力エリア
+  
+  if (!'SpeechSynthesisUtterance' in window) {
+      alert("あなたのブラウザはSpeech Synthesis APIに未対応です。");
+  }
+  const tts = new SpeechSynthesisUtterance(); // TTSインスタンスを生成
+  //tts.text = textForm.value; // テキストを設定
+  tts.lang = "ja-JP"; // 言語(日本語)、英語の場合はen-US
+  tts.rate = 1.0; // 速度
+  tts.pitch = 2.0; // 声の高さ
+  tts.volume = 1.0; // 音量
+  
+  SpeechRecognition = webkitSpeechRecognition || SpeechRecognition;
+  if (!'SpeechRecognition' in window) {
+      alert("あなたのブラウザはSpeech Recognition APIに未対応です。");
+  }
+  
+  const asr = new SpeechRecognition(); // ASRインスタンスを生成
+  asr.lang = "ja-JP"; // 言語（日本語）
+  asr.interimResults = true; // 途中結果出力をオン
+  asr.continuous = true; // 継続入力をオン
+  
+  let output = ''; // 出力
+
+  let answer = Array(1000); //1000回分の返答を記憶しておく
+  let i = 0;
+  
+  
+  // 認識結果が出力されたときのイベントハンドラ
+  asr.onresult = function(event){
+    let transcript = event.results[event.resultIndex][0].transcript; // 結果文字列
+
+    let output_not_final = '';
+    if (event.results[event.resultIndex].isFinal) { // 結果が確定（Final）のとき
+      asr.abort(); // 音声認識を停止
+        //let answer[]; //1000回分の質問を記憶しておく
+
+        let keys = Object.keys(response);
+        keys.forEach(function(key) {
+            let flag = false;
+            console.log(transcript);
+            key.split(',').forEach(function(word) {              
+                let pattern = new RegExp(word);
+                let flag_test = pattern.test(transcript); // マッチしたらtrue, しなかったらfalse
+                if(flag_test){
+                    flag = true;
+                    //break;
+                    console.log(pattern + "で一致");
+                }
+                //flag = flag && flag_test; // 両方trueならtrue
+                //console.log(pattern + '+' + ':' + flag_test);
+                //flag = flag && new RegExp(word).test(transcript);
+            });
+
+            if(flag){
+            answer[i] = response[key];
+                console.log(key + " : " + answer[i]);
+                reSpeak = 0; //会話が進んだ場合は0に戻る
+            }
+      });
+
+      if(typeof answer[i] == 'undefined'){
+        if(reSpeak < 2){
+            answer[i] = answer[i-1]; //ひとつ前の答えを復唱する
+            reSpeak++;
+            console.log("reSpeak: " + reSpeak);
+        }else{ //3回聞き直してだめだったら最初に戻る
+            answer[i] = response[".*話して.*"];
+        }
+        
+      }
+
+      if(first_flag){ //初めて話しかけたとき
+        answer[i] = response[".*話して.*"];
+        first_flag = false;
+        reSpeak = 0; //会話が進んだ場合は0に戻る
+      }
+
+       if(answer[i] == "適切な目的地をお探しします"){
+        console.log("API動かす");
+        if(isNaN(transcript)){//数字意外が入力に含まれていたら戻す
+            answer[i] = "すみません聞き取れませんでした。もう一度お願いします";
+        }else{
+            answer[i] = API(transcript); //目的地の住所を返す
+            console.log("API()")
+            reSpeak = 0; //会話が進んだ場合は0に戻る
+            //目的地までの時間を聞けるようになりたい
+        }
+      }
+
+      output = transcript + ' => ' + answer[i] + '<br>' + output;
+
+      tts.text = answer[i];
+      // 再生が終了（end）ときのイベントハンドラ（終了したときに実行される）
+      tts.onend = function(event){
+          asr.start(); // 音声認識を再開
+          i++; //一回の会話が終了したら次のanswerで結果を受け取る
+          console.log("i: " + i);
+      }
+
+      speechSynthesis.speak(tts); // 再生
+      } else { // 結果がまだ未確定のとき
+          output_not_final = '<span style="color:#696969;">' + transcript + '</span>';
+      }
+      resultOutput.innerHTML = output_not_final +'<br>' + output;
+  }
+
+    // 開始ボタンのイベントハンドラ
+    startButton.addEventListener('click', function() {
+    asr.start();
+    })
+
+    // 停止ボタンのイベントハンドラ
+    stopButton.addEventListener('click', function() {
+    asr.abort();
+    asr.stop();
+    })
+
+
+
+
+    function API(time){
+        time = Number(time) / 2; //往復を考えるため片道の距離で考える
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                function( position ){
+                    let coords = position.coords;
+                    console.log(coords);
+                    //Re(coords);
+                    
+                    Reachable(coords);
+                }
+        )}
+
+        function Reachable(coords) {
+            
+                const options = {
+                method: 'GET',
+                headers: {
+                    'X-RapidAPI-Key': 'bdd50e24f6msh29fb4b829563deap188e94jsn902572e6215c',
+                    'X-RapidAPI-Host': 'navitime-reachable.p.rapidapi.com'
+                }
+            };
+
+            fetch(`https://navitime-reachable.p.rapidapi.com/reachable_bicycle?start=${coords.latitude}%2C${coords.longitude}&coord_unit=degree&datum=wgs84&bicycle_speed=15&term=${time}`, options)
+                .then(response => response.json())
+                .then((response) => {
+                    console.log(response)
+                    if(response.count == 0){//対象地域がなかった場合は戻る
+                        //戻る
+                    }else{
+                        Random(response);
+                    }
+                })
+                //.then(response => Random())
+                .catch(err => console.error(err));
+        }
+
+        function Random(response){ //ランダムに目的地を決める
+            let random = Math.floor(Math.random() * response.count);
+            console.log(random);
+            console.log(response.items[random]);
+            geocoding(response.items[random].coord);
+        }
+
+        function geocoding(coord){//住所に戻す
+            const options = {
+            method: 'GET',
+            headers: {
+                'X-RapidAPI-Key': 'bdd50e24f6msh29fb4b829563deap188e94jsn902572e6215c',
+                'X-RapidAPI-Host': 'navitime-geocoding.p.rapidapi.com'
+            }
+        };
+
+        fetch(`https://navitime-geocoding.p.rapidapi.com/address/reverse_geocoding?coord=${coord.lat}%2C${coord.lon}&datum=wgs84&coord_unit=degree`, options)
+            .then(response => response.json())
+            .then((response) => {
+                console.log(response.items[0].name)
+                return response.items[0].name;
+            })
+            .catch(err => console.error(err));
+
+        }
+    }
+
+
+
+
+
+</script>
+</body>
+</html>
